@@ -2,25 +2,24 @@
 #include <TouchScreen.h>
 
 // TouchSensor configuration.
-#define XP 8
-#define XM A2
-#define YP A3
-#define YM 9
+const byte XP = 8;
+const byte XM = A2;
+const byte YP = A3;
+const byte YM = 9;
 
 // TouchSensor calibration.
-#define CALIBRATIONLEFT   923
-#define CALIBRATIONRIGHT  102
-#define CALIBRATIONTOP    934
-#define CALIBRATIONBOTTOM 70
+const unsigned int CalibrationLeft = 923;
+const unsigned int CalibrationRight = 102;
+const unsigned int CalibrationTop = 934;
+const unsigned int CalibrationBottom = 70;
 
 // Define colours.
-#define BLACK     0x0000
-#define WHITE     0xFFFF
-#define ORANGE    0xFC00
-#define DARKGREY  0x18E3
-#define LIGHTGREY 0x8410
+const unsigned int Black = 0x0000;
+const unsigned int White = 0xFFFF;
+const unsigned int Grey = 0x18E3;
+const unsigned int Orange = 0xFC00;
 
-// Global constants.
+// Constant dimensions.
 const byte OutputWindowHeight = 80;
 
 // Custom classes.
@@ -57,20 +56,6 @@ class KeypadLabel {
     byte _paddingLeft;
 };
 
-// Forward declarations.
-void setup();
-void loop();
-void initialiseDisplay();
-void drawInterface();
-void drawOutputWindow();
-void drawKeypad();
-void drawKeypadHorizontalLines(byte keyHeight, byte firstHorizontalLine, unsigned int lastHorizontalLine, unsigned int keypadGridLinesColour);
-void drawKeypadVerticalLines(byte keyHeight, byte firstHorizontalLine, byte firstVerticalLine, byte middleVerticalLine, byte lastVerticalLine, unsigned int keypadGridLinesColour);
-void drawKeypadLabels(byte keyWidth, byte keyHeight, byte keypadLabelPaddingTop, unsigned int keypadLabelTextColour, unsigned int keypadEnterKeyLabelTextColour);
-void waitForTouch();
-bool touchSensorPressed();
-void readTouchSensor();
-
 // Global variables.
 MCUFRIEND_kbv Display;
 TouchScreen TouchSensor(XP, YP, XM, YM, 300);
@@ -80,6 +65,7 @@ float TRegister = 0.0;
 float ZRegister = 0.0;
 float YRegister = 0.0;
 float XRegister = 0.0;
+float LastXRegister = 0.0;
 
 KeypadLabel* KeypadLabels[6][4] = {
   {
@@ -120,6 +106,32 @@ KeypadLabel* KeypadLabels[6][4] = {
   }
 };
 
+// Forward declarations.
+void setup();
+void loop();
+void initialiseDisplay();
+void drawInterface();
+void drawOutputWindow();
+void drawKeypad();
+void drawKeypadHorizontalLines(byte keyHeight, byte firstHorizontalLine, unsigned int lastHorizontalLine, unsigned int keypadGridLinesColour);
+void drawKeypadVerticalLines(byte keyHeight, byte firstHorizontalLine, byte firstVerticalLine, byte middleVerticalLine, byte lastVerticalLine, unsigned int keypadGridLinesColour);
+void drawKeypadLabels(byte keyWidth, byte keyHeight, byte keypadLabelPaddingTop, unsigned int keypadLabelTextColour, unsigned int keypadEnterKeyLabelTextColour);
+void waitForTouch();
+bool touchSensorPressed();
+void readTouchSensor();
+void push(float NewXRegister = XRegister);
+float pop();
+void rollDown();
+void swapXAndY();
+void clearX();
+void invertX();
+void addXToY();
+void subtractYFromX();
+void multiplyXByY();
+void divideYByX();
+void xthRootOfY();
+void yToPowerOfX();
+
 void setup() {
   initialiseDisplay();
   drawInterface();
@@ -131,85 +143,6 @@ void loop() {
   byte selectedKey = determineSelectedKey();
 
   drawOutputWindow();
-}
-
-void waitForTouch() {
-  while (!touchSensorPressed()) {}
-  while (touchSensorPressed()) {}
-  while (!touchSensorPressed()) {}
-}
-
-bool touchSensorPressed() {
-  byte count = 0;
-  bool currentPressedState = false;
-  bool previousPressedState = false;
-
-  while (count < 10) {
-    readTouchSensor();
-    currentPressedState = (TouchPoint.z > 20);
-
-    if (currentPressedState == previousPressedState) {
-      count++;
-    }
-    else {
-      count = 0;
-    }
-
-    previousPressedState = currentPressedState;
-    delay(5);
-  }
-
-  return previousPressedState;
-}
-
-void readTouchSensor() {
-  TouchPoint = TouchSensor.getPoint();
-  pinMode(YP, OUTPUT);
-  pinMode(XM, OUTPUT);
-  digitalWrite(YP, HIGH);
-  digitalWrite(XM, HIGH);
-}
-
-byte determineSelectedKey() {
-  unsigned int inputX = map(TouchPoint.x, CALIBRATIONLEFT, CALIBRATIONRIGHT, 0, 240);
-  unsigned int inputY = map(TouchPoint.y, CALIBRATIONTOP, CALIBRATIONBOTTOM, 0, 320);
-
-  byte keypadVerticalHalf = 200;
-  byte keypadFirstQuarter = 60;
-  byte keypadHorizontalHalf = 120;
-  byte keypadThirdQuarter = 180;
-
-  if (inputY < OutputWindowHeight) {
-    return 255;
-  } else if (inputY < keypadVerticalHalf) {
-    if (inputX < keypadHorizontalHalf) {
-      if (inputX < keypadFirstQuarter) {
-
-      } else {
-
-      }
-    } else {
-      if (inputX < keypadFirstQuarter) {
-
-      } else {
-
-      }
-    }
-  } else {
-    if (inputX < keypadHorizontalHalf) {
-      if (inputX < keypadThirdQuarter) {
-
-      } else {
-
-      }
-    } else {
-      if (inputX < keypadThirdQuarter) {
-
-      } else {
-
-      }
-    }
-  }
 }
 
 void initialiseDisplay() {
@@ -225,9 +158,8 @@ void drawInterface() {
 }
 
 void drawOutputWindow() {
-  unsigned int outputWindowTextColour = DARKGREY;
-  unsigned int outputWindowBackgroundColour = WHITE;
-
+  unsigned int outputWindowTextColour = Grey;
+  unsigned int outputWindowBackgroundColour = White;
 
   byte maximumRegisterAsStringLength = 15;
   byte textPaddingTop = 8;
@@ -251,10 +183,10 @@ void drawOutputWindow() {
 }
 
 void drawKeypad() {
-  unsigned int keypadLabelTextColour = WHITE;
-  unsigned int keypadEnterKeyLabelTextColour = ORANGE;
-  unsigned int keypadGridLinesColour = BLACK;
-  unsigned int keypadBackgroundColour = DARKGREY;
+  unsigned int keypadLabelTextColour = White;
+  unsigned int keypadEnterKeyLabelTextColour = Orange;
+  unsigned int keypadGridLinesColour = Black;
+  unsigned int keypadBackgroundColour = Grey;
 
   byte keyWidth = 60;
   byte keyHeight = 40;
@@ -302,5 +234,162 @@ void drawKeypadLabels(byte keyWidth, byte keyHeight, byte keypadLabelPaddingTop,
       Display.println(KeypadLabels[i][j]->getLabel());
     }
   }
+
+  free(KeypadLabels);
+}
+
+void waitForTouch() {
+  while (!touchSensorPressed()) {}
+  while (touchSensorPressed()) {}
+  while (!touchSensorPressed()) {}
+}
+
+bool touchSensorPressed() {
+  byte count = 0;
+  bool currentPressedState = false;
+  bool previousPressedState = false;
+
+  while (count < 10) {
+    readTouchSensor();
+    currentPressedState = (TouchPoint.z > 20);
+
+    if (currentPressedState == previousPressedState) {
+      count++;
+    }
+    else {
+      count = 0;
+    }
+
+    previousPressedState = currentPressedState;
+    delay(5);
+  }
+
+  return previousPressedState;
+}
+
+void readTouchSensor() {
+  TouchPoint = TouchSensor.getPoint();
+  pinMode(YP, OUTPUT);
+  pinMode(XM, OUTPUT);
+  digitalWrite(YP, HIGH);
+  digitalWrite(XM, HIGH);
+}
+
+byte determineSelectedKey() {
+  unsigned int inputX = map(TouchPoint.x, CalibrationLeft, CalibrationRight, 0, 240);
+  unsigned int inputY = map(TouchPoint.y, CalibrationTop, CalibrationBottom, 0, 320);
+
+  byte keypadVerticalHalf = 200;
+  byte keypadFirstQuarter = 60;
+  byte keypadHorizontalHalf = 120;
+  byte keypadThirdQuarter = 180;
+
+  if (inputY < OutputWindowHeight) {
+    return 255;
+  } else if (inputY < keypadVerticalHalf) {
+    if (inputX < keypadHorizontalHalf) {
+      if (inputX < keypadFirstQuarter) {
+
+      } else {
+
+      }
+    } else {
+      if (inputX < keypadFirstQuarter) {
+
+      } else {
+
+      }
+    }
+  } else {
+    if (inputX < keypadHorizontalHalf) {
+      if (inputX < keypadThirdQuarter) {
+
+      } else {
+
+      }
+    } else {
+      if (inputX < keypadThirdQuarter) {
+
+      } else {
+
+      }
+    }
+  }
+}
+
+void push(float NewXRegister = XRegister) {
+  LastXRegister = XRegister;
+  TRegister = ZRegister;
+  ZRegister = YRegister;
+  YRegister = XRegister;
+  XRegister = NewXRegister;
+}
+
+float pop() {
+  LastXRegister = XRegister;
+  XRegister = YRegister;
+  YRegister = ZRegister;
+  ZRegister = TRegister;
+  return LastXRegister;
+}
+
+void rollDown() {
+  LastXRegister = XRegister;
+  XRegister = YRegister;
+  YRegister = ZRegister;
+  ZRegister = TRegister;
+  TRegister = LastXRegister;
+}
+
+void swapXAndY() {
+  LastXRegister = XRegister;
+  XRegister = YRegister;
+  YRegister = LastXRegister;
+}
+
+void clearX() {
+  LastXRegister = XRegister;
+  XRegister = 0.0;
+}
+
+void addXToY() {
+  LastXRegister = pop();
+  XRegister += LastXRegister;
+}
+
+void subtractYFromX() {
+  LastXRegister = pop();
+  XRegister -= LastXRegister;
+}
+
+void multiplyXByY() {
+  LastXRegister = pop();
+  XRegister *= LastXRegister;
+}
+
+void divideYByX() {
+  if (XRegister != 0.0) {
+    LastXRegister = pop();
+    XRegister /= LastXRegister;
+  }
+}
+
+void invertX() {
+  if (XRegister != 0.0) {
+    LastXRegister = XRegister;
+    XRegister = 1 / XRegister;
+  }
+}
+
+void xthRootOfY() {
+  if ((fmod(XRegister, 2.0) != 0.0) && XRegister != 0.0) {
+    LastXRegister = pop();
+    XRegister = pow(XRegister, 1 / LastXRegister);
+  }
+}
+
+void yToPowerOfX() {
+  LastXRegister = pop();
+  XRegister = pow(XRegister, LastXRegister);
 }
 
