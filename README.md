@@ -6,5 +6,6 @@ Current state:
 
 * Interface: Done.
 * Touch sensing: Done.
-* Input parsing: In progress.
+* Input parsing: Done.
 * Calculator functions: Done.
+* Map input to functions: Todo.
