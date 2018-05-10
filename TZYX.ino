@@ -1,35 +1,76 @@
+/*
+    TZYX by Francois W. Nel
+    A stack logic calculator.
+    Makes use of a 320x240 TFT LCD touch shield by Mcufriend.com.
+*/
+
 #include <MCUFRIEND_kbv.h>
 #include <TouchScreen.h>
 
-// TouchSensor configuration.
+/* TouchSensor configuration */
 const byte XP = 8;
 const byte XM = A2;
 const byte YP = A3;
 const byte YM = 9;
 
-// TouchSensor calibration.
+/* TouchSensor calibration */
 const unsigned int CalibrationLeft = 923;
 const unsigned int CalibrationRight = 102;
 const unsigned int CalibrationTop = 934;
 const unsigned int CalibrationBottom = 70;
 
-// Define colours.
+/* Colours */
 const unsigned int Black = 0x0000;
 const unsigned int White = 0xFFFF;
 const unsigned int Grey = 0x18E3;
 const unsigned int Orange = 0xFC00;
 
-// Constant dimensions.
+/* Global constants */
 const byte DisplayWidth = 240;
 const unsigned int DisplayHeight = 320;
+
 const byte OutputWindowHeight = 80;
 const byte OutputWindowHeightInKeys = 2;
+const byte OutputWindowTextPadding = 17;
+const byte TRegisterPaddingTop = 7;
+const byte RegisterPaddingLeft = 12;
+const byte MaximumRegisterAsStringLength = 15;
+const byte MaximumInputRegisterAsStringLength = 14;
+const unsigned int OutputWindowTextColour = Grey;
+const unsigned int OutputWindowBackgroundColour = White;
+
 const byte KeypadWidth = 240;
 const byte KeypadHeight = 240;
 const byte KeypadWidthInKeys = 4;
 const byte KeypadHeightInKeys = 6;
+const byte KeyWidth = 60;
+const byte KeyHeight = 40;
+const byte LabelPaddingTop = 14;
 
-// Custom classes.
+const unsigned int KeyLabelTextColour = White;
+const unsigned int EnterKeyLabelTextColour = Orange;
+const unsigned int KeypadGridLinesColour = Black;
+const unsigned int KeypadBackgroundColour = Grey;
+
+/* Derived global constants */
+const byte ZRegisterPaddingTop = TRegisterPaddingTop + OutputWindowTextPadding;
+const byte YRegisterPaddingTop = ZRegisterPaddingTop + OutputWindowTextPadding;
+const byte XRegisterPaddingTop = YRegisterPaddingTop + OutputWindowTextPadding;
+
+const byte OutputWindowBottom = OutputWindowHeight - 1;
+const byte NumberOfTrailingDecimals = MaximumRegisterAsStringLength - 2;
+
+const byte FirstHorizontalLine = DisplayHeight - 1 - KeypadHeight;
+const unsigned int LastHorizontalLine = DisplayHeight - 1 - KeyHeight;
+
+const byte FirstVerticalLine = KeyWidth - 1;
+const byte MiddleVerticalLine = FirstVerticalLine + KeyWidth;
+const byte LastVerticalLine = MiddleVerticalLine + KeyWidth;
+
+const byte EnterKeyTop = FirstHorizontalLine + KeyHeight;
+const byte EnterKeyBottom = EnterKeyTop + KeyHeight;
+
+/* Structs and classes */
 struct Coordinate {
   unsigned int x;
   unsigned int y;
@@ -64,25 +105,84 @@ class Key {
     }
 
   private:
-    Coordinate _topLeft;
-    Coordinate _bottomRight;
     String _label;
     byte _labelPaddingLeft;
 };
 
-// Global variables.
+/* Global variables */
 MCUFRIEND_kbv Display;
 TouchScreen TouchSensor(XP, YP, XM, YM, 300);
 TSPoint RawInput;
 Coordinate CalibratedInput;
 Coordinate SelectedKey;
+byte InputCursorPosition;
+bool InInputMode;
 
+/* The stack */
 float TRegister = 0.0;
 float ZRegister = 0.0;
 float YRegister = 0.0;
 float XRegister = 0.0;
 float LastXRegister = 0.0;
+String InputRegister = "123";
 
+/* Forward declarations */
+void setup();
+void loop();
+
+void initialiseDisplay();
+void drawInterface();
+void drawOutputWindow();
+void drawOutput();
+void drawKeypad();
+void drawKeypadHorizontalLines();
+void drawKeypadVerticalLines();
+void drawKeys();
+
+void waitForTouch();
+bool touchSensorPressed();
+void readTouchSensor();
+void determineSelectedKey();
+
+void push(float NewXRegister = XRegister);
+float pop();
+void rollDown();
+void swapXAndY();
+void clearX();
+void invertX();
+void addXToY();
+void subtractYFromX();
+void multiplyXByY();
+void divideYByX();
+void xthRootOfY();
+void yToPowerOfX();
+
+void negateX();
+byte invertKey();
+byte rootKey();
+byte exponentKey();
+byte rollKey();
+byte enterKey();
+byte swapKey();
+byte clearKey();
+byte divisionKey();
+byte multiplicationKey();
+byte subtractionKey();
+byte additionKey();
+byte radixKey();
+byte negationKey();
+byte number0Key();
+byte number1Key();
+byte number2Key();
+byte number3Key();
+byte number4Key();
+byte number5Key();
+byte number6Key();
+byte number7Key();
+byte number8Key();
+byte number9Key();
+
+/* Keypad definitions */
 Key* Keys[KeypadHeightInKeys][KeypadWidthInKeys] = {
   {
     new Key("1/X"),
@@ -122,36 +222,53 @@ Key* Keys[KeypadHeightInKeys][KeypadWidthInKeys] = {
   }
 };
 
-// Forward declarations.
-void setup();
-void loop();
-void initialiseDisplay();
-void drawInterface();
-void drawOutputWindow();
-void drawKeypad();
-void drawKeypadHorizontalLines(byte keyHeight, byte firstHorizontalLine, unsigned int lastHorizontalLine, unsigned int keypadGridLinesColour);
-void drawKeypadVerticalLines(byte keyHeight, byte firstHorizontalLine, byte firstVerticalLine, byte middleVerticalLine, byte lastVerticalLine, unsigned int keypadGridLinesColour);
-void drawKeys(byte keyWidth, byte keyHeight, byte KeyPaddingTop, unsigned int KeyTextColour, unsigned int keypadEnterKeyLabelTextColour);
-void waitForTouch();
-bool touchSensorPressed();
-void readTouchSensor();
-void determineSelectedKey();
-void push(float NewXRegister = XRegister);
-float pop();
-void rollDown();
-void swapXAndY();
-void clearX();
-void invertX();
-void addXToY();
-void subtractYFromX();
-void multiplyXByY();
-void divideYByX();
-void xthRootOfY();
-void yToPowerOfX();
+byte KeyFunctions[KeypadHeightInKeys][KeypadWidthInKeys] {
+  {
+    invertKey(),
+    rootKey(),
+    exponentKey(),
+    rollKey(),
+  },
+  {
+    enterKey(),
+    enterKey(),
+    swapKey(),
+    clearKey(),
+  },
+  {
+    number7Key(),
+    number8Key(),
+    number9Key(),
+    divisionKey(),
+  },
+  {
+    number4Key(),
+    number5Key(),
+    number6Key(),
+    multiplicationKey(),
+  },
+  {
+    number1Key(),
+    number2Key(),
+    number3Key(),
+    subtractionKey(),
+  },
+  {
+    number0Key(),
+    radixKey(),
+    negationKey(),
+    additionKey(),
+  },
+};
 
+/* Main functions */
 void setup() {
   initialiseDisplay();
   drawInterface();
+  InInputMode = false;
+
+  InInputMode = true;
+  drawOutput();
 }
 
 void loop() {
@@ -160,6 +277,7 @@ void loop() {
   determineSelectedKey();
 }
 
+/* Interface functions */
 void initialiseDisplay() {
   Display.reset();
   unsigned int displayId = Display.readID();
@@ -173,87 +291,102 @@ void drawInterface() {
 }
 
 void drawOutputWindow() {
-  unsigned int outputWindowTextColour = Grey;
-  unsigned int outputWindowBackgroundColour = White;
-
-  byte maximumRegisterAsStringLength = 15;
-  byte textPaddingTop = 8;
-
-  byte outputWindowBottom = OutputWindowHeight - 1;
-  byte numberOfTrailingDecimals = maximumRegisterAsStringLength - 2;
-
-  String TRegisterAsString = String(TRegister, numberOfTrailingDecimals).substring(0, maximumRegisterAsStringLength);
-  String ZRegisterAsString = String(ZRegister, numberOfTrailingDecimals).substring(0, maximumRegisterAsStringLength);
-  String YRegisterAsString = String(YRegister, numberOfTrailingDecimals).substring(0, maximumRegisterAsStringLength);
-  String XRegisterAsString = String(XRegister, numberOfTrailingDecimals).substring(0, maximumRegisterAsStringLength);
-
-  Display.fillRect(0, 0, DisplayWidth, outputWindowBottom, outputWindowBackgroundColour);
-  Display.setTextSize(2);
-  Display.setTextColor(outputWindowTextColour);
-  Display.setCursor(0, textPaddingTop);
-  Display.println(" T: " + TRegisterAsString);
-  Display.println(" Z: " + ZRegisterAsString);
-  Display.println(" Y: " + YRegisterAsString);
-  Display.println(" X: " + XRegisterAsString);
+  Display.fillRect(0, 0, DisplayWidth, OutputWindowBottom, OutputWindowBackgroundColour);
+  drawOutput();
 }
 
-void drawKeypad() {
-  unsigned int KeyTextColour = White;
-  unsigned int keypadEnterKeyLabelTextColour = Orange;
-  unsigned int keypadGridLinesColour = Black;
-  unsigned int keypadBackgroundColour = Grey;
+void drawOutput() {
+  if (InInputMode) {
+    String InputRegisterAsStringForDisplay = InputRegister;//.substring(InputRegisterAsString.length() - MaximumInputRegisterAsStringLength, MaximumInputRegisterAsStringLength);
 
-  byte keyWidth = 60;
-  byte keyHeight = 40;
-  byte KeyPaddingTop = 14;
+    Display.fillRect(0, XRegisterPaddingTop, DisplayWidth, OutputWindowTextPadding, OutputWindowBackgroundColour);
+    Display.setTextSize(2);
+    Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
+    Display.setCursor(RegisterPaddingLeft, XRegisterPaddingTop);
+    Display.print("X: " + InputRegisterAsStringForDisplay);
 
-  byte firstHorizontalLine = DisplayHeight - 1 - KeypadHeight;
-  unsigned int lastHorizontalLine = DisplayHeight - 1 - keyHeight;
-  byte firstVerticalLine = keyWidth - 1;
-  byte middleVerticalLine = firstVerticalLine + keyWidth;
-  byte lastVerticalLine = middleVerticalLine + keyWidth;
+    int characterWidth = 12;
+    InputCursorPosition = (4 * characterWidth) + InputRegisterAsStringForDisplay.length() * characterWidth;
+  } else {
+    String TRegisterAsString = String(TRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
+    String ZRegisterAsString = String(ZRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
+    String YRegisterAsString = String(YRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
+    String XRegisterAsString = String(XRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
 
-  Display.fillRect(0, firstHorizontalLine, DisplayWidth, DisplayHeight, keypadBackgroundColour);
-  drawKeypadHorizontalLines(keyHeight, firstHorizontalLine, lastHorizontalLine, keypadGridLinesColour);
-  drawKeypadVerticalLines(keyHeight, firstHorizontalLine, firstVerticalLine, middleVerticalLine, lastVerticalLine, keypadGridLinesColour);
-
-  drawKeys(keyWidth, keyHeight, firstHorizontalLine + KeyPaddingTop, KeyTextColour, keypadEnterKeyLabelTextColour);
-}
-
-void drawKeypadHorizontalLines(byte keyHeight, byte firstHorizontalLine, unsigned int lastHorizontalLine, unsigned int keypadGridLinesColour) {
-  for (unsigned int y = firstHorizontalLine; y <= lastHorizontalLine; y += keyHeight) {
-    Display.drawLine(0, y, DisplayWidth - 1, y, keypadGridLinesColour);
+    Display.setTextSize(2);
+    Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
+    Display.setCursor(RegisterPaddingLeft, TRegisterPaddingTop);
+    Display.println("T: " + TRegisterAsString);
+    Display.setCursor(RegisterPaddingLeft, ZRegisterPaddingTop);
+    Display.println("Z: " + ZRegisterAsString);
+    Display.setCursor(RegisterPaddingLeft, YRegisterPaddingTop);
+    Display.println("Y: " + YRegisterAsString);
+    Display.setCursor(RegisterPaddingLeft, XRegisterPaddingTop);
+    Display.println("X: " + XRegisterAsString);
   }
 }
 
-void drawKeypadVerticalLines(byte keyHeight, byte firstHorizontalLine, byte firstVerticalLine, byte middleVerticalLine, byte lastVerticalLine, unsigned int keypadGridLinesColour) {
-  byte enterKeyTop = firstHorizontalLine + keyHeight;
-  byte enterKeyBottom = enterKeyTop + keyHeight;
-
-  Display.drawLine(firstVerticalLine, firstHorizontalLine, firstVerticalLine, enterKeyTop, keypadGridLinesColour);
-  Display.drawLine(firstVerticalLine, enterKeyBottom, firstVerticalLine, DisplayHeight - 1, keypadGridLinesColour);
-  Display.drawLine(middleVerticalLine, firstHorizontalLine, middleVerticalLine, DisplayHeight - 1, keypadGridLinesColour);
-  Display.drawLine(lastVerticalLine, firstHorizontalLine, lastVerticalLine, DisplayHeight - 1, keypadGridLinesColour);
+void drawKeypad() {
+  Display.fillRect(0, FirstHorizontalLine, DisplayWidth, DisplayHeight, KeypadBackgroundColour);
+  drawKeypadHorizontalLines();
+  drawKeypadVerticalLines();
+  drawKeys();
 }
 
-void drawKeys(byte keyWidth, byte keyHeight, byte KeyPaddingTop, unsigned int KeyTextColour, unsigned int keypadEnterKeyLabelTextColour) {
+void drawKeypadHorizontalLines() {
+  for (unsigned int y = FirstHorizontalLine; y <= LastHorizontalLine; y += KeyHeight) {
+    Display.drawLine(0, y, DisplayWidth - 1, y, KeypadGridLinesColour);
+  }
+}
+
+void drawKeypadVerticalLines() {
+  Display.drawLine(FirstVerticalLine, FirstHorizontalLine, FirstVerticalLine, EnterKeyTop, KeypadGridLinesColour);
+  Display.drawLine(FirstVerticalLine, EnterKeyBottom, FirstVerticalLine, DisplayHeight - 1, KeypadGridLinesColour);
+  Display.drawLine(MiddleVerticalLine, FirstHorizontalLine, MiddleVerticalLine, DisplayHeight - 1, KeypadGridLinesColour);
+  Display.drawLine(LastVerticalLine, FirstHorizontalLine, LastVerticalLine, DisplayHeight - 1, KeypadGridLinesColour);
+}
+
+void drawKeys() {
   Display.setTextSize(2);
 
   for (byte i = 0; i < 6; i++) {
     for (byte j = 0; j < 4; j++) {
       if ((i == 1) && (j == 1)) continue;
 
-      Display.setTextColor(((i == 1) && (j == 0)) ? keypadEnterKeyLabelTextColour : KeyTextColour);
-      Display.setCursor((keyWidth * j) + Keys[i][j]->getLabelPaddingLeft(), (keyHeight * i) + KeyPaddingTop);
+      Display.setTextColor(((i == 1) && (j == 0)) ? EnterKeyLabelTextColour : KeyLabelTextColour);
+      Display.setCursor((KeyWidth * j) + Keys[i][j]->getLabelPaddingLeft(), (KeyHeight * i) + FirstHorizontalLine + LabelPaddingTop);
       Display.println(Keys[i][j]->getLabel());
     }
   }
 }
 
+/* User interaction functions */
 void waitForTouch() {
-  while (!touchSensorPressed()) {}
-  while (touchSensorPressed()) {}
-  while (!touchSensorPressed()) {}
+  while (!touchSensorPressed()) {
+    blinkCursor();
+  }
+  while (touchSensorPressed()) {
+    blinkCursor();
+  }
+  while (!touchSensorPressed()) {
+    blinkCursor();
+  }
+}
+
+void blinkCursor() {
+  if (InInputMode) {
+    unsigned int seconds = millis() / 1000;
+    Display.setTextSize(2);
+    
+    if (((seconds) % 2) == 0) {
+      Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
+    } else {
+      Display.setTextColor(OutputWindowBackgroundColour, OutputWindowBackgroundColour);
+    }
+
+    Display.setCursor(InputCursorPosition, XRegisterPaddingTop);
+    Display.print("_");
+  }
 }
 
 bool touchSensorPressed() {
@@ -302,6 +435,100 @@ void determineSelectedKey() {
   }
 }
 
+/* Key functions */
+byte invertKey() {
+  return 1;
+}
+
+byte rootKey() {
+  return 1;
+}
+
+byte exponentKey() {
+  return 1;
+}
+
+byte rollKey() {
+  return 1;
+}
+
+byte enterKey() {
+  return 1;
+}
+
+byte swapKey() {
+  return 1;
+}
+
+byte clearKey() {
+  return 1;
+}
+
+byte divisionKey() {
+  return 1;
+}
+
+byte multiplicationKey() {
+  return 1;
+}
+
+byte subtractionKey() {
+  return 1;
+}
+
+byte additionKey() {
+  return 1;
+}
+
+byte radixKey() {
+  return 1;
+}
+
+byte negationKey() {
+  return 1;
+}
+
+byte number0Key() {
+  return 1;
+}
+
+byte number1Key() {
+  return 1;
+}
+
+byte number2Key() {
+  return 1;
+}
+
+byte number3Key() {
+  return 1;
+}
+
+byte number4Key() {
+  return 1;
+}
+
+byte number5Key() {
+  return 1;
+}
+
+byte number6Key() {
+  return 1;
+}
+
+byte number7Key() {
+  return 1;
+}
+
+byte number8Key() {
+  return 1;
+}
+
+byte number9Key() {
+  return 1;
+}
+
+/* Calculator functions */
 void push(float NewXRegister = XRegister) {
   LastXRegister = XRegister;
   TRegister = ZRegister;
@@ -376,5 +603,9 @@ void xthRootOfY() {
 void yToPowerOfX() {
   LastXRegister = pop();
   XRegister = pow(XRegister, LastXRegister);
+}
+
+void negateX() {
+
 }
 
