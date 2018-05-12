@@ -7,6 +7,8 @@
 #include <MCUFRIEND_kbv.h>
 #include <TouchScreen.h>
 
+typedef byte(*KeyFunction) ();
+
 /* TouchSensor configuration */
 const byte XP = 8;
 const byte XM = A2;
@@ -35,7 +37,6 @@ const byte OutputWindowTextPadding = 17;
 const byte TRegisterPaddingTop = 7;
 const byte RegisterPaddingLeft = 12;
 const byte MaximumRegisterAsStringLength = 15;
-const byte MaximumInputRegisterAsStringLength = 14;
 const unsigned int OutputWindowTextColour = Grey;
 const unsigned int OutputWindowBackgroundColour = White;
 
@@ -56,9 +57,9 @@ const unsigned int KeypadBackgroundColour = Grey;
 const byte ZRegisterPaddingTop = TRegisterPaddingTop + OutputWindowTextPadding;
 const byte YRegisterPaddingTop = ZRegisterPaddingTop + OutputWindowTextPadding;
 const byte XRegisterPaddingTop = YRegisterPaddingTop + OutputWindowTextPadding;
-
 const byte OutputWindowBottom = OutputWindowHeight - 1;
 const byte NumberOfTrailingDecimals = MaximumRegisterAsStringLength - 2;
+const byte MaximumInputAsStringLength = MaximumRegisterAsStringLength - 1;
 
 const byte FirstHorizontalLine = DisplayHeight - 1 - KeypadHeight;
 const unsigned int LastHorizontalLine = DisplayHeight - 1 - KeyHeight;
@@ -117,6 +118,7 @@ Coordinate CalibratedInput;
 Coordinate SelectedKey;
 byte InputCursorPosition;
 bool InInputMode;
+bool InWarningMode;
 
 /* The stack */
 float TRegister = 0.0;
@@ -124,7 +126,8 @@ float ZRegister = 0.0;
 float YRegister = 0.0;
 float XRegister = 0.0;
 float LastXRegister = 0.0;
-String InputRegister = "123";
+String Input = "";
+String ErrorMessage = "";
 
 /* Forward declarations */
 void setup();
@@ -142,7 +145,8 @@ void drawKeys();
 void waitForTouch();
 bool touchSensorPressed();
 void readTouchSensor();
-void determineSelectedKey();
+bool determineSelectedKey();
+void performKeyFunction();
 
 void push(float NewXRegister = XRegister);
 float pop();
@@ -222,42 +226,42 @@ Key* Keys[KeypadHeightInKeys][KeypadWidthInKeys] = {
   }
 };
 
-byte KeyFunctions[KeypadHeightInKeys][KeypadWidthInKeys] {
+KeyFunction KeyFunctions[KeypadHeightInKeys][KeypadWidthInKeys] {
   {
-    invertKey(),
-    rootKey(),
-    exponentKey(),
-    rollKey(),
+    invertKey,
+    rootKey,
+    exponentKey,
+    rollKey,
   },
   {
-    enterKey(),
-    enterKey(),
-    swapKey(),
-    clearKey(),
+    enterKey,
+    enterKey,
+    swapKey,
+    clearKey,
   },
   {
-    number7Key(),
-    number8Key(),
-    number9Key(),
-    divisionKey(),
+    number7Key,
+    number8Key,
+    number9Key,
+    divisionKey,
   },
   {
-    number4Key(),
-    number5Key(),
-    number6Key(),
-    multiplicationKey(),
+    number4Key,
+    number5Key,
+    number6Key,
+    multiplicationKey,
   },
   {
-    number1Key(),
-    number2Key(),
-    number3Key(),
-    subtractionKey(),
+    number1Key,
+    number2Key,
+    number3Key,
+    subtractionKey,
   },
   {
-    number0Key(),
-    radixKey(),
-    negationKey(),
-    additionKey(),
+    number0Key,
+    radixKey,
+    negationKey,
+    additionKey,
   },
 };
 
@@ -266,15 +270,14 @@ void setup() {
   initialiseDisplay();
   drawInterface();
   InInputMode = false;
-
-  InInputMode = true;
-  drawOutput();
 }
 
 void loop() {
   waitForTouch();
 
-  determineSelectedKey();
+  bool validInput = determineSelectedKey();
+
+  if (validInput) performKeyFunction();
 }
 
 /* Interface functions */
@@ -296,25 +299,30 @@ void drawOutputWindow() {
 }
 
 void drawOutput() {
-  if (InInputMode) {
-    String InputRegisterAsStringForDisplay = InputRegister;//.substring(InputRegisterAsString.length() - MaximumInputRegisterAsStringLength, MaximumInputRegisterAsStringLength);
+  Display.setTextSize(2);
+  Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
+
+  if (InWarningMode) {
+    Display.fillRect(0, XRegisterPaddingTop, DisplayWidth, OutputWindowTextPadding, OutputWindowBackgroundColour);
+    Display.setCursor(RegisterPaddingLeft, XRegisterPaddingTop);
+    Display.print("Error: " + ErrorMessage);
+  }
+  else if (InInputMode) {
+    String InputSubstringForDisplay = (Input.length() <= MaximumInputAsStringLength) ? Input : Input.substring(Input.length() - MaximumInputAsStringLength, Input.length());
 
     Display.fillRect(0, XRegisterPaddingTop, DisplayWidth, OutputWindowTextPadding, OutputWindowBackgroundColour);
-    Display.setTextSize(2);
-    Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
     Display.setCursor(RegisterPaddingLeft, XRegisterPaddingTop);
-    Display.print("X: " + InputRegisterAsStringForDisplay);
+    Display.print("X: " + InputSubstringForDisplay);
 
     int characterWidth = 12;
-    InputCursorPosition = (4 * characterWidth) + InputRegisterAsStringForDisplay.length() * characterWidth;
-  } else {
+    InputCursorPosition = (4 * characterWidth) + InputSubstringForDisplay.length() * characterWidth;
+  }
+  else {
     String TRegisterAsString = String(TRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
     String ZRegisterAsString = String(ZRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
     String YRegisterAsString = String(YRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
     String XRegisterAsString = String(XRegister, NumberOfTrailingDecimals).substring(0, MaximumRegisterAsStringLength);
 
-    Display.setTextSize(2);
-    Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
     Display.setCursor(RegisterPaddingLeft, TRegisterPaddingTop);
     Display.println("T: " + TRegisterAsString);
     Display.setCursor(RegisterPaddingLeft, ZRegisterPaddingTop);
@@ -377,10 +385,11 @@ void blinkCursor() {
   if (InInputMode) {
     unsigned int seconds = millis() / 1000;
     Display.setTextSize(2);
-    
+
     if (((seconds) % 2) == 0) {
       Display.setTextColor(OutputWindowTextColour, OutputWindowBackgroundColour);
-    } else {
+    }
+    else {
       Display.setTextColor(OutputWindowBackgroundColour, OutputWindowBackgroundColour);
     }
 
@@ -423,7 +432,7 @@ void readTouchSensor() {
   digitalWrite(XM, HIGH);
 }
 
-void determineSelectedKey() {
+bool determineSelectedKey() {
   CalibratedInput.x = map(RawInput.x, CalibrationLeft, CalibrationRight, 0, DisplayWidth);
   CalibratedInput.y = map(RawInput.y, CalibrationTop, CalibrationBottom, 0, DisplayHeight);
 
@@ -433,98 +442,160 @@ void determineSelectedKey() {
     SelectedKey.x = map(CalibratedInput.x, 0, KeypadWidth, 0, KeypadWidthInKeys);
     SelectedKey.y = map(CalibratedInput.y, 0, KeypadHeight, 0, KeypadHeightInKeys) - OutputWindowHeightInKeys;
   }
+
+  return inputIsOverKeypad;
+}
+
+void performKeyFunction() {
+  KeyFunctions[SelectedKey.y][SelectedKey.x]();
+}
+
+void enterInputMode() {
+  InInputMode = true;
+}
+
+void exitInputMode() {
+  Input = "";
+  InInputMode = false;
 }
 
 /* Key functions */
 byte invertKey() {
+  drawOutput();
   return 1;
 }
 
 byte rootKey() {
+  drawOutput();
   return 1;
 }
 
 byte exponentKey() {
+  drawOutput();
   return 1;
 }
 
 byte rollKey() {
+  drawOutput();
   return 1;
 }
 
 byte enterKey() {
+  drawOutput();
   return 1;
 }
 
 byte swapKey() {
+  drawOutput();
   return 1;
 }
 
 byte clearKey() {
+  drawOutput();
   return 1;
 }
 
 byte divisionKey() {
+  drawOutput();
   return 1;
 }
 
 byte multiplicationKey() {
+  drawOutput();
   return 1;
 }
 
 byte subtractionKey() {
+  drawOutput();
   return 1;
 }
 
 byte additionKey() {
+  drawOutput();
   return 1;
 }
 
 byte radixKey() {
+  drawOutput();
   return 1;
 }
 
 byte negationKey() {
+  if (InInputMode) Input = "-" + Input;
+  else negateX();
+
+  drawOutput();
+
   return 1;
 }
 
 byte number0Key() {
+  enterInputMode();
+  Input.concat("0");
+  drawOutput();
   return 1;
 }
 
 byte number1Key() {
+  enterInputMode();
+  Input.concat("1");
+  drawOutput();
   return 1;
 }
 
 byte number2Key() {
+  enterInputMode();
+  Input.concat("2");
+  drawOutput();
   return 1;
 }
 
 byte number3Key() {
+  enterInputMode();
+  Input.concat("3");
+  drawOutput();
   return 1;
 }
 
 byte number4Key() {
+  enterInputMode();
+  Input.concat("4");
+  drawOutput();
   return 1;
 }
 
 byte number5Key() {
+  enterInputMode();
+  Input.concat("5");
+  drawOutput();
   return 1;
 }
 
 byte number6Key() {
+  enterInputMode();
+  Input.concat("6");
+  drawOutput();
   return 1;
 }
 
 byte number7Key() {
+  enterInputMode();
+  Input.concat("7");
+  drawOutput();
   return 1;
 }
 
 byte number8Key() {
+  enterInputMode();
+  Input.concat("8");
+  drawOutput();
   return 1;
 }
 
 byte number9Key() {
+  enterInputMode();
+  Input.concat("9");
+  drawOutput();
   return 1;
 }
 
@@ -606,6 +677,6 @@ void yToPowerOfX() {
 }
 
 void negateX() {
-
+  LastXRegister = XRegister;
+  XRegister = 0 - XRegister;
 }
-
